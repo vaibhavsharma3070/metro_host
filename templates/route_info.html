@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surat Metro - Route Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .nav-buttons {
+            margin-bottom: 20px;
+        }
+        .nav-buttons a {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin-right: 10px;
+        }
+        .routes-container {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 20px auto;
+            max-width: 1200px;
+        }
+        .route-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            flex: 1;
+            max-width: 500px;
+        }
+        .route-card h2 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 3px solid;
+        }
+        .red-line h2 {
+            border-color: #ff0000;
+            color: #ff0000;
+        }
+        .green-line h2 {
+            border-color: #00aa00;
+            color: #00aa00;
+        }
+        .station-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .station-list li {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+        }
+        .station-list li:last-child {
+            border-bottom: none;
+        }
+        .station-icon {
+            margin-right: 10px;
+            font-size: 1.2em;
+        }
+        .transfer-station {
+            background-color: #fff3f3;
+            font-weight: bold;
+        }
+        .map-container {
+            margin-top: 30px;
+        }
+        iframe {
+            width: 100%;
+            height: 600px;
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Surat Metro Route Information</h1>
+        <div class="nav-buttons">
+            <a href="/">← Back to Route Finder</a>
+        </div>
+    </div>
+
+    <div class="routes-container">
+        <div class="route-card red-line">
+            <h2>🔴 Red Line</h2>
+            <ul class="station-list">
+                {% for station in routes['Red Line'].stations %}
+                    <li {% if station in intersection_stations %}class="transfer-station"{% endif %}>
+                        <span class="station-icon">{% if station in intersection_stations %}🔄{% else %}🚉{% endif %}</span>
+                        {{ station }}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="route-card green-line">
+            <h2>🟢 Green Line</h2>
+            <ul class="station-list">
+                {% for station in routes['Green Line'].stations %}
+                    <li {% if station in intersection_stations %}class="transfer-station"{% endif %}>
+                        <span class="station-icon">{% if station in intersection_stations %}🔄{% else %}🚉{% endif %}</span>
+                        {{ station }}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <div class="map-container">
+        <iframe src="{{ url_for('static', filename='map.html') }}"></iframe>
+    </div>
+</body>
+</html> 

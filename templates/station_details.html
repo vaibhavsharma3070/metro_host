@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surat Metro - Station Details</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .nav-buttons {
+            margin-bottom: 20px;
+        }
+        .nav-buttons a {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 0 10px;
+        }
+        .station-details {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .station-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .station-table th,
+        .station-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .station-table th {
+            background-color: #f8f8f8;
+            font-weight: bold;
+            color: #333;
+        }
+        .station-table tr:hover {
+            background-color: #f9f9f9;
+        }
+        .red-line {
+            color: #ff0000;
+        }
+        .green-line {
+            color: #00aa00;
+        }
+        .transfer-station {
+            background-color: #fff3f3;
+        }
+        .station-icon {
+            font-size: 1.2em;
+            margin-right: 5px;
+        }
+        .corridor-number {
+            font-weight: bold;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Surat Metro Station Details</h1>
+        <div class="nav-buttons">
+            <a href="/">← Back to Route Finder</a>
+            <a href="/route_info">View Route Map</a>
+        </div>
+    </div>
+
+    <div class="station-details">
+        <table class="station-table">
+            <thead>
+                <tr>
+                    <th>Station Name</th>
+                    <th>Line Type</th>
+                    <th>Corridor</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for station in stations %}
+                <tr {% if station.is_transfer %}class="transfer-station"{% endif %}>
+                    <td>
+                        <span class="station-icon">{% if station.is_transfer %}🔄{% else %}🚉{% endif %}</span>
+                        {{ station.name }}
+                    </td>
+                    <td class="{% if station.line == 'Red Line' %}red-line{% else %}green-line{% endif %}">
+                        {{ station.emoji }} {{ station.line }}
+                    </td>
+                    <td>
+                        <span class="corridor-number">Corridor {{ station.corridor_number }}</span>
+                    </td>
+                    <td>
+                        {% if station.is_transfer %}
+                        <span style="color: #ff6b6b;">Transfer Station</span>
+                        {% else %}
+                        Regular Station
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html> 
