@@ -199,5 +199,19 @@
             <p>Select starting and destination stations to find the best route.</p>
         </div>
     {% endif %}
+
+    <script>
+        document.querySelector("form").addEventListener("submit", function(e) {
+            const start = document.getElementById("start").value;
+            const end = document.getElementById("end").value;
+    
+            if (start === end) {
+                alert("Start and End stations cannot be the same.");
+                e.preventDefault(); // prevent form from submitting
+            }
+        });
+    </script>
+    
+
 </body>
 </html>
