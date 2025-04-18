@@ -591,5 +591,293 @@ def find_route_with_changes(start, end):
     return route_with_changes
 
 
+@app.route('/map', methods=['GET'])
+def fullscreen_map():
+    """
+    API endpoint that returns just the map in full-screen view
+    without any additional UI elements.
+    
+    Query parameters:
+    - start: Optional starting station name
+    - end: Optional ending station name
+    - line: Optional line filter ('red', 'green', or 'all')
+    """
+    # Get query parameters
+    start = request.args.get('start')
+    end = request.args.get('end')
+    line_filter = request.args.get('line', 'all').lower()
+    
+    # Create a clean map
+    metro_map = folium.Map(location=[21.2, 72.85], zoom_start=12, tiles='cartodbpositron')
+    
+    # Extract KML data
+    kml_routes = extract_route_coordinates_from_kml('base.kml')
+    
+    # Map KML route names to corridor names and colors
+    route_mapping = {
+        'Green Line': {
+            'kml_name': 'Green Line',
+            'color': '#00ff00',  # Bright green
+            'emoji': '🟢',
+            'stations': list(corridor_2.keys()),
+            'coords': list(corridor_2.values())
+        },
+        'Red Line': {  # This is "Orange Line" in the KML
+            'kml_name': 'Orange Line',
+            'color': '#ff0000',  # Bright red
+            'emoji': '🔴',
+            'stations': list(corridor_1.keys()),
+            'coords': list(corridor_1.values())
+        }
+    }
+    
+    if start and end and start in all_stations and end in all_stations:
+        # Generate route between stations
+        route = find_route_with_changes(start, end)
+        
+        # Create a list of coordinates for all stations in the route
+        route_coords = []
+        for station_info in route:
+            station_coord = all_stations[station_info['station']]
+            if station_coord not in route_coords:  # Avoid duplicates
+                route_coords.append(station_coord)
+        
+        # Calculate bounds to focus the map on the route
+        if route_coords:
+            lats = [coord[0] for coord in route_coords]
+            lons = [coord[1] for coord in route_coords]
+            min_lat, max_lat = min(lats), max(lats)
+            min_lon, max_lon = min(lons), max(lons)
+            padding = 0.01  # about 1km
+            bounds = [[min_lat - padding, min_lon - padding], 
+                     [max_lat + padding, max_lon + padding]]
+            metro_map.fit_bounds(bounds)
+        
+        # Route color mapping
+        route_colors = {
+            'Red Line': '#ff0000',
+            'Green Line': '#00ff00'
+        }
+        
+        # KML route name mapping
+        kml_name_mapping = {
+            'Red Line': 'Orange Line',  # KML uses "Orange Line" for "Red Line"
+            'Green Line': 'Green Line'
+        }
+        
+        # Group continuous segments by line
+        segments_by_line = {}
+        current_segment = []
+        current_line = None
+        
+        for i, station_info in enumerate(route):
+            station_name = station_info['station']
+            station_line = station_info['line']
+            
+            # Start of a new segment or a new line
+            if current_line is None or station_line != current_line:
+                # If there was a previous segment, finish it
+                if current_segment:
+                    if current_line not in segments_by_line:
+                        segments_by_line[current_line] = []
+                    segments_by_line[current_line].append(current_segment)
+                
+                # Start a new segment on this line
+                current_segment = [station_name]
+                current_line = station_line
+            else:
+                # Continue the current segment
+                current_segment.append(station_name)
+        
+        # Add the final segment
+        if current_segment:
+            if current_line not in segments_by_line:
+                segments_by_line[current_line] = []
+            segments_by_line[current_line].append(current_segment)
+        
+        # Draw each line segment with appropriate color
+        for line, segments in segments_by_line.items():
+            kml_line_name = kml_name_mapping.get(line)
+            line_color = route_colors.get(line)
+            
+            if kml_line_name in kml_routes:
+                for segment in segments:
+                    if len(segment) >= 2:  # Need at least 2 stations
+                        for j in range(len(segment) - 1):
+                            start_station = segment[j]
+                            end_station = segment[j+1]
+                            start_coord = all_stations[start_station]
+                            end_coord = all_stations[end_station]
+                            
+                            # Extract route segment from KML
+                            route_segment = extract_route_segment(
+                                kml_routes[kml_line_name],
+                                start_coord,
+                                end_coord
+                            )
+                            
+                            # Draw segment
+                            folium.PolyLine(
+                                locations=route_segment,
+                                color=line_color,
+                                weight=5,
+                                opacity=1.0,
+                                tooltip=f"{start_station} to {end_station} ({line})"
+                            ).add_to(metro_map)
+        
+        # Draw transfer points
+        for i in range(len(route) - 1):
+            curr_station = route[i]
+            next_station = route[i+1]
+            
+            if curr_station['station'] == next_station['station'] and curr_station['line'] != next_station['line']:
+                station_coord = all_stations[curr_station['station']]
+                
+                # Add transfer indicator
+                folium.CircleMarker(
+                    location=station_coord,
+                    radius=10,
+                    color="#FF6B6B",
+                    fill=True,
+                    fillColor="#FF6B6B",
+                    fillOpacity=0.8,
+                    weight=2,
+                    tooltip=f"Transfer at {curr_station['station']}: {curr_station['line']} to {next_station['line']}"
+                ).add_to(metro_map)
+        
+        # Add markers for all stations in the route
+        for i, station_info in enumerate(route):
+            station_name = station_info['station']
+            station_coord = all_stations[station_name]
+            station_line = station_info['line']
+            
+            # Skip duplicate markers for transfer stations
+            skip = False
+            if i > 0 and station_name == route[i-1]['station']:
+                skip = True
+            
+            if not skip:
+                # Use different icons for start, end, and transfer stations
+                icon_html = "🚉"  # Default
+                if i == 0:
+                    icon_html = "🚆"  # Start station
+                elif i == len(route) - 1:
+                    icon_html = "🏁"  # End station
+                elif station_name in intersection_stations:
+                    icon_html = "🔄"  # Transfer station
+                
+                # Add marker
+                folium.Marker(
+                    location=station_coord,
+                    tooltip=station_name,
+                    icon=folium.DivIcon(
+                        html=f'<div style="font-size: 15px; text-align: center;">{icon_html}</div>',
+                        icon_size=(20, 20),
+                        icon_anchor=(10, 10)
+                    )
+                ).add_to(metro_map)
+                
+                # Add circle with line color
+                folium.CircleMarker(
+                    location=station_coord,
+                    radius=8,
+                    color=route_colors.get(station_line, '#ff0000'),
+                    fill=True,
+                    fillColor=route_colors.get(station_line, '#ff0000'),
+                    fillOpacity=0.8,
+                    weight=2,
+                    opacity=1.0
+                ).add_to(metro_map)
+    
+    else:
+        # No route specified, show all lines based on line_filter
+        for route_name, route_data in route_mapping.items():
+            if line_filter == 'all' or (line_filter == 'red' and route_name == 'Red Line') or (line_filter == 'green' and route_name == 'Green Line'):
+                kml_name = route_data['kml_name']
+                
+                if kml_name in kml_routes:
+                    # Draw the entire route line using KML coordinates
+                    folium.PolyLine(
+                        locations=kml_routes[kml_name],
+                        color=route_data['color'],
+                        weight=4,
+                        opacity=1.0,
+                        tooltip=route_name
+                    ).add_to(metro_map)
+                
+                # Add station markers
+                for station, coord in zip(route_data['stations'], route_data['coords']):
+                    # Skip intersection stations that are already added
+                    if station in intersection_stations and route_name == 'Red Line' and station in corridor_2:
+                        continue
+                    
+                    # Add the marker
+                    folium.Marker(
+                        location=coord,
+                        tooltip=station,
+                        icon=folium.DivIcon(
+                            html=f'<div style="font-size: 15px; text-align: center;">🚉</div>',
+                            icon_size=(20, 20),
+                            icon_anchor=(10, 10)
+                        )
+                    ).add_to(metro_map)
+                    
+                    # Add circle marker for better visibility
+                    folium.CircleMarker(
+                        location=coord,
+                        radius=5,
+                        color=route_data['color'],
+                        fill=True,
+                        fillColor=route_data['color'],
+                        fillOpacity=1,
+                        weight=2,
+                        opacity=0.8
+                    ).add_to(metro_map)
+                    
+                    # Highlight intersection stations
+                    if station in intersection_stations:
+                        folium.CircleMarker(
+                            location=coord,
+                            radius=10,
+                            color="#FF6B6B",
+                            fill=False,
+                            weight=2,
+                            opacity=0.8,
+                            tooltip=f"Transfer Station: {station}"
+                        ).add_to(metro_map)
+    
+    # Save map to a temporary file
+    map_html = metro_map._repr_html_()
+    
+    # Create a full-screen template
+    fullscreen_html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Surat Metro Map</title>
+        <style>
+            body, html {{
+                margin: 0;
+                padding: 0;
+                height: 100%;
+                width: 100%;
+                overflow: hidden;
+            }}
+            #map {{
+                height: 100%;
+                width: 100%;
+            }}
+        </style>
+    </head>
+    <body>
+        {map_html}
+    </body>
+    </html>
+    """
+    
+    return fullscreen_html
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
