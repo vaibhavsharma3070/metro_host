@@ -64,6 +64,45 @@
             border-radius: 5px;
             margin: 0 10px;
         }
+        .route-details {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 600px;
+        }
+        .route-summary {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .station-icon {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+        .line-color {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        .red-line {
+            background-color: #ff0000;
+        }
+        .green-line {
+            background-color: #00ff00;
+        }
+        .switches-info {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
     </style>
 </head>
 <body>
@@ -78,14 +117,14 @@
         <label for="start">Start:</label>
         <select name="start" id="start">
             {% for station in stations %}
-                <option value="{{ station }}">{{ station }}</option>
+                <option value="{{ station }}" {% if start == station %}selected{% endif %}>{{ station }}</option>
             {% endfor %}
         </select>
         
         <label for="end">End:</label>
         <select name="end" id="end">
             {% for station in stations %}
-                <option value="{{ station }}">{{ station }}</option>
+                <option value="{{ station }}" {% if end == station %}selected{% endif %}>{{ station }}</option>
             {% endfor %}
         </select>
         
@@ -93,25 +132,72 @@
     </form>
     
     {% if route %}
-        <h2>Best Route from {{ start }} to {{ end }}:</h2>
-        <ul class="route-list">
-            {% for station_info in route %}
-                <li class="{% if station_info.is_transfer %}transfer-station{% endif %}">
-                    {% if station_info.is_transfer %}
-                        <strong>🔄 {{ station_info.station }}</strong>
-                        <div style="color: #ff6b6b; font-size: 0.9em; margin-top: 5px;">
-                            Transfer from {{ station_info.line }} to {{ station_info.transfer_to }}
+        <div class="route-details">
+            <div class="route-summary">
+                <div>
+                    <h3>Best Route from {{ start }} to {{ end }}</h3>
+                    <p>Total stations: {{ route|length }}</p>
+                    
+                    {% set transfer_count = 0 %}
+                    {% for station_info in route %}
+                        {% if station_info.is_transfer %}
+                            {% set transfer_count = transfer_count + 1 %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if transfer_count > 0 %}
+                        <div class="switches-info">
+                            <p>Line changes: {{ transfer_count }}</p>
                         </div>
-                    {% else %}
-                        <span>🚉 {{ station_info.station }}</span>
+                    {% endif %}
+                </div>
+                
+                <div>
+                    <p>
+                        <span class="line-color {{ route[0].line|lower|replace(' ', '-') }}"></span> 
+                        {{ route[0].line }}
+                        {% if transfer_count > 0 %}
+                            → 
+                            <span class="line-color {{ route[-1].line|lower|replace(' ', '-') }}"></span>
+                            {{ route[-1].line }}
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+            
+            <ul class="route-list">
+                {% for station_info in route %}
+                    <li class="{% if station_info.is_transfer %}transfer-station{% endif %}">
+                        {% if loop.first %}
+                            <span class="station-icon">🚆</span>
+                        {% elif loop.last %}
+                            <span class="station-icon">🏁</span>
+                        {% elif station_info.is_transfer %}
+                            <span class="station-icon">🔄</span>
+                        {% else %}
+                            <span class="station-icon">🚉</span>
+                        {% endif %}
+                        
+                        <strong>{{ station_info.station }}</strong>
                         <div style="color: #666; font-size: 0.9em; margin-top: 5px;">
                             {{ station_info.line }}
                         </div>
-                    {% endif %}
-                </li>
-            {% endfor %}
-        </ul>
+                        
+                        {% if station_info.is_transfer %}
+                            <div style="color: #ff6b6b; font-size: 0.9em; margin-top: 5px;">
+                                Transfer from {{ station_info.line }} to {{ station_info.transfer_to }}
+                            </div>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+        
         <iframe src="{{ url_for('static', filename='map.html') }}"></iframe>
+    {% else %}
+        <div style="margin: 40px 0; color: #666;">
+            <p>Select starting and destination stations to find the best route.</p>
+        </div>
     {% endif %}
 </body>
 </html>
