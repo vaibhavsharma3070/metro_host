@@ -296,9 +296,12 @@ def find_nearest_point_index(kml_coords, station_coord):
     
     return min_index
 
+
+
 def extract_route_segment(kml_coords, start_station_coord, end_station_coord):
     """
     Extract the segment of kml_coords that connects start_station_coord to end_station_coord
+    with improved handling for finding the correct path
     """
     # Find indices of nearest points
     start_index = find_nearest_point_index(kml_coords, start_station_coord)
@@ -332,7 +335,11 @@ def index():
             kml_routes = extract_route_coordinates_from_kml('base.kml')
             
             # Create a list of coordinates for all stations in the route
-            route_coords = [all_stations[station_info['station']] for station_info in route]
+            route_coords = []
+            for station_info in route:
+                station_coord = all_stations[station_info['station']]
+                if station_coord not in route_coords:  # Avoid duplicates for transfer stations
+                    route_coords.append(station_coord)
             
             # Calculate bounds to focus the map on the route
             if route_coords:
@@ -343,7 +350,7 @@ def index():
                 # Add some padding
                 padding = 0.01  # about 1km
                 bounds = [[min_lat - padding, min_lon - padding], 
-                          [max_lat + padding, max_lon + padding]]
+                         [max_lat + padding, max_lon + padding]]
                 metro_map.fit_bounds(bounds)
             
             # Route color mapping
@@ -358,42 +365,36 @@ def index():
                 'Green Line': 'Green Line'
             }
             
-            # Group route segments by line
+            # Group continuous segments by line
             segments_by_line = {}
+            current_segment = []
             current_line = None
-            line_segment_start = None
             
             for i, station_info in enumerate(route):
                 station_name = station_info['station']
                 station_coord = all_stations[station_name]
                 station_line = station_info['line']
                 
-                # Start of a new line segment
-                if station_line != current_line:
-                    # If there was a previous line segment, finish it
-                    if current_line and line_segment_start:
+                # Start of a new segment or a new line
+                if current_line is None or station_line != current_line:
+                    # If there was a previous segment, finish it
+                    if current_segment:
                         if current_line not in segments_by_line:
                             segments_by_line[current_line] = []
-                        segments_by_line[current_line].append({
-                            'start': line_segment_start,
-                            'end': prev_station_name
-                        })
+                        segments_by_line[current_line].append(current_segment)
                     
                     # Start a new segment on this line
-                    line_segment_start = station_name
+                    current_segment = [station_name]
                     current_line = station_line
-                
-                # Remember the prev station for next iteration
-                prev_station_name = station_name
+                else:
+                    # Continue the current segment
+                    current_segment.append(station_name)
             
             # Add the final segment
-            if current_line and line_segment_start:
+            if current_segment:
                 if current_line not in segments_by_line:
                     segments_by_line[current_line] = []
-                segments_by_line[current_line].append({
-                    'start': line_segment_start,
-                    'end': prev_station_name
-                })
+                segments_by_line[current_line].append(current_segment)
             
             # Draw each line segment with appropriate color
             for line, segments in segments_by_line.items():
@@ -402,22 +403,47 @@ def index():
                 
                 if kml_line_name in kml_routes:
                     for segment in segments:
-                        start_coord = all_stations[segment['start']]
-                        end_coord = all_stations[segment['end']]
-                        
-                        route_segment = extract_route_segment(
-                            kml_routes[kml_line_name],
-                            start_coord,
-                            end_coord
-                        )
-                        
-                        # Draw segment
-                        folium.PolyLine(
-                            locations=route_segment,
-                            color=line_color,
-                            weight=5,
-                            opacity=1.0
-                        ).add_to(metro_map)
+                        if len(segment) >= 2:  # Need at least 2 stations to form a segment
+                            # For each adjacent pair of stations in the segment
+                            for j in range(len(segment) - 1):
+                                start_station = segment[j]
+                                end_station = segment[j+1]
+                                start_coord = all_stations[start_station]
+                                end_coord = all_stations[end_station]
+                                
+                                # Extract route segment from KML
+                                route_segment = extract_route_segment(
+                                    kml_routes[kml_line_name],
+                                    start_coord,
+                                    end_coord
+                                )
+                                
+                                # Draw segment
+                                folium.PolyLine(
+                                    locations=route_segment,
+                                    color=line_color,
+                                    weight=5,
+                                    opacity=1.0,
+                                    tooltip=f"{start_station} to {end_station} ({line})"
+                                ).add_to(metro_map)
+            
+            # Special handling for transfer stations - draw connector line if needed
+            for i in range(len(route) - 1):
+                curr_station = route[i]
+                next_station = route[i+1]
+                
+                # If both entries refer to the same station but different lines, add a connector
+                if curr_station['station'] == next_station['station'] and curr_station['line'] != next_station['line']:
+                    station_coord = all_stations[curr_station['station']]
+                    
+                    # Add a visible connecting line at the transfer station
+                    folium.PolyLine(
+                        locations=[station_coord, station_coord],  # Same point, creates a dot
+                        color="#FF6B6B",  # Bright red for transfer
+                        weight=8,  # Make it wider than the route lines
+                        opacity=0.8,
+                        tooltip=f"Transfer at {curr_station['station']}: {curr_station['line']} to {next_station['line']}"
+                    ).add_to(metro_map)
             
             # Add markers for all stations in the route
             for i, station_info in enumerate(route):
@@ -425,47 +451,53 @@ def index():
                 station_coord = all_stations[station_name]
                 station_line = station_info['line']
                 
-                # Create popup
-                popup_html = f"""
-                <div style="font-family: Arial; text-align: center;">
-                    <h4 style="margin: 0;">{station_name}</h4>
-                    <p style="margin: 5px 0;">🚉 {station_line}</p>
-                    {f'<p style="color: #ff6b6b;">Transfer to {station_info["transfer_to"]}</p>' if station_info["is_transfer"] else ''}
-                </div>
-                """
+                # Skip duplicate markers for transfer stations (when the same station appears twice)
+                skip = False
+                if i > 0 and station_name == route[i-1]['station']:
+                    skip = True
                 
-                # Use different icons for start, end, and transfer stations
-                icon_html = "🚉"  # Default
-                if i == 0:
-                    icon_html = "🚆"  # Start station
-                elif i == len(route) - 1:
-                    icon_html = "🏁"  # End station
-                elif station_info["is_transfer"]:
-                    icon_html = "🔄"  # Transfer station
-                
-                # Add marker
-                folium.Marker(
-                    location=station_coord,
-                    popup=folium.Popup(popup_html, max_width=200),
-                    tooltip=station_name,
-                    icon=folium.DivIcon(
-                        html=f'<div style="font-size: 15px; text-align: center;">{icon_html}</div>',
-                        icon_size=(20, 20),
-                        icon_anchor=(10, 10)
-                    )
-                ).add_to(metro_map)
-                
-                # Add circle with line color
-                folium.CircleMarker(
-                    location=station_coord,
-                    radius=8,
-                    color=route_colors.get(station_line, '#ff0000'),
-                    fill=True,
-                    fillColor=route_colors.get(station_line, '#ff0000'),
-                    fillOpacity=0.8,
-                    weight=2,
-                    opacity=1.0
-                ).add_to(metro_map)
+                if not skip:
+                    # Create popup
+                    popup_html = f"""
+                    <div style="font-family: Arial; text-align: center;">
+                        <h4 style="margin: 0;">{station_name}</h4>
+                        <p style="margin: 5px 0;">🚉 {station_line}</p>
+                        {f'<p style="color: #ff6b6b;">Transfer Station</p>' if station_name in intersection_stations else ''}
+                    </div>
+                    """
+                    
+                    # Use different icons for start, end, and transfer stations
+                    icon_html = "🚉"  # Default
+                    if i == 0:
+                        icon_html = "🚆"  # Start station
+                    elif i == len(route) - 1:
+                        icon_html = "🏁"  # End station
+                    elif station_name in intersection_stations:
+                        icon_html = "🔄"  # Transfer station
+                    
+                    # Add marker
+                    folium.Marker(
+                        location=station_coord,
+                        popup=folium.Popup(popup_html, max_width=200),
+                        tooltip=station_name,
+                        icon=folium.DivIcon(
+                            html=f'<div style="font-size: 15px; text-align: center;">{icon_html}</div>',
+                            icon_size=(20, 20),
+                            icon_anchor=(10, 10)
+                        )
+                    ).add_to(metro_map)
+                    
+                    # Add circle with line color
+                    folium.CircleMarker(
+                        location=station_coord,
+                        radius=8,
+                        color=route_colors.get(station_line, '#ff0000'),
+                        fill=True,
+                        fillColor=route_colors.get(station_line, '#ff0000'),
+                        fillOpacity=0.8,
+                        weight=2,
+                        opacity=1.0
+                    ).add_to(metro_map)
             
             # Save the map
             metro_map.save("static/map.html")
@@ -475,6 +507,7 @@ def index():
                          start=start, 
                          end=end, 
                          route=route if route else None)
+
 
 def find_route_with_changes(start, end):
     """
@@ -500,38 +533,50 @@ def find_route_with_changes(start, end):
         # Special handling for transfer stations
         if station in intersection_stations:
             # Check if this is a transfer point (not the start/end and line change is needed)
+            is_transfer = False
+            transfer_to = None
+            
             if i > 0 and i < len(route) - 1:
-                # Get the next station's line to determine if we need to transfer
+                # Get the previous and next station's line to determine if we need to transfer
+                prev_station = route[i - 1]
                 next_station = route[i + 1]
+                prev_line = get_station_line(prev_station)
                 next_line = get_station_line(next_station)
                 
                 # If the next station is on a different line, this is a transfer point
-                if next_line != current_line:
+                if next_line != prev_line:
+                    is_transfer = True
+                    transfer_to = next_line
+                    
+                    # Add the intersection station on the current line first
                     route_with_changes.append({
                         'station': station,
-                        'line': current_line,
+                        'line': prev_line,
                         'is_transfer': True,
                         'transfer_to': next_line
                     })
-                    # Update current line after transfer
-                    current_line = next_line
-                else:
-                    # Same line continues, no transfer needed
+                    
+                    # Then add it again as the starting point on the new line
                     route_with_changes.append({
                         'station': station,
-                        'line': current_line,
-                        'is_transfer': False,
-                        'transfer_to': None
+                        'line': next_line,
+                        'is_transfer': True,
+                        'transfer_to': None  # Already transferred
                     })
-            else:
-                # This is either the start or end station
+                    
+                    # Update current line
+                    current_line = next_line
+                    continue  # Skip the normal addition since we added it twice
+            
+            # If not a transfer or start/end, add normally
+            if not is_transfer:
                 route_with_changes.append({
                     'station': station,
-                    'line': station_line,  # Use the actual line of start/end
+                    'line': station_line if i == 0 or i == len(route) - 1 else current_line,
                     'is_transfer': False,
                     'transfer_to': None
                 })
-                # If this is the start station, update current_line
+                # Update current line if this is the start
                 if i == 0:
                     current_line = station_line
         else:
