@@ -861,22 +861,37 @@ def fullscreen_map():
             body, html {{
                 margin: 0;
                 padding: 0;
-                height: 100%;
+                height: 100vh;
                 width: 100%;
                 overflow: hidden;
             }}
-            #map {{
-                height: 100%;
-                width: 100%;
+            .folium-map {{
+                height: 100vh !important;
+                width: 100% !important;
+            }}
+            iframe {{
+                height: 100vh !important;
+                width: 100% !important;
+                border: none;
             }}
         </style>
     </head>
     <body>
         {map_html}
+        <script>
+            // Fix iframe sizing after load
+            document.addEventListener('DOMContentLoaded', function() {{
+                var iframes = document.getElementsByTagName('iframe');
+                for(var i = 0; i < iframes.length; i++) {{
+                    iframes[i].style.height = '100vh';
+                    iframes[i].style.width = '100%';
+                }}
+            }});
+        </script>
     </body>
     </html>
     """
-    
+
     return fullscreen_html
 
 if __name__ == "__main__":
