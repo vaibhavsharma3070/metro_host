@@ -887,6 +887,8 @@ def fullscreen_map():
                     iframes[i].style.width = '100%';
                 }}
             }});
+            // remove attribution
+            $('.leaflet-control-attribution').hide()
         </script>
     </body>
     </html>
